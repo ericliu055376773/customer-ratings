@@ -74,7 +74,6 @@ function describeArc(x: number, y: number, radius: number, startAngle: number, e
 // ==========================================
 // Components
 // ==========================================
-// 【修復重點1】：加上 style?: React.CSSProperties 解決 Vercel 的型別報錯
 const DynamicFace = ({ rating, className = "", style }: { rating: RatingLevel; className?: string; style?: React.CSSProperties }) => {
   const config = MOODS[rating];
 
@@ -186,13 +185,12 @@ function RatingApp() {
 
     // 啟動時先給予測試資料，避免畫面空白等待
     setStores([
-      { id: 'store-1', name: '台北信義店 (測試連線中...)', password: '123' },
+      { id: 'store-1', name: '載入中...', password: '123' },
     ]);
 
     // 在背景安全地載入 Firebase
     const initFirebase = async () => {
       try {
-        // 【修復重點2】：加入 @ts-ignore 與直接載入 Firebase CDN，避開 Vercel 打包找不到模組的錯誤
         // @ts-ignore
         const { initializeApp } = await import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js');
         // @ts-ignore
@@ -250,10 +248,16 @@ function RatingApp() {
     initFirebase();
   }, []);
 
-  // 當商店列表載入後，若尚未選擇店鋪，則預設選擇第一個
+  // 【修復重點】：當商店列表變動時，確保選擇的 ID 確實存在於列表中
   useEffect(() => {
-    if (stores.length > 0 && !selectedStoreId) {
-      setSelectedStoreId(stores[0].id);
+    if (stores.length > 0) {
+      const isValidStore = stores.some(s => s.id === selectedStoreId);
+      // 如果目前選擇的 ID 空的，或是根本不在真實的清單中（例如被覆蓋掉），就強制切換到第一個真實分店
+      if (!selectedStoreId || !isValidStore) {
+        setSelectedStoreId(stores[0].id);
+      }
+    } else {
+      setSelectedStoreId('');
     }
   }, [stores, selectedStoreId]);
 
@@ -339,7 +343,8 @@ function RatingApp() {
   // --- 操作處理 ---
   const handleLogin = () => {
     const store = stores.find(s => s.id === selectedStoreId);
-    if (store && store.password === loginPassword) {
+    // 【修復重點】：加入 .trim() 避免不小心輸入空白鍵導致比對失敗
+    if (store && store.password?.trim() === loginPassword.trim()) {
       setCurrentStore(store);
       setIsLoggedIn(true);
       setLoginError('');
@@ -373,8 +378,8 @@ function RatingApp() {
       const appIdStr = 'customer-rating-app';
       const storesRef = collectionRef.current(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'stores');
       await addDocRef.current(storesRef, {
-        name: newStoreName,
-        password: newStorePassword
+        name: newStoreName.trim(), // 防呆：存入時也去除頭尾空白
+        password: newStorePassword.trim()
       });
       setNewStoreName('');
       setNewStorePassword('');
