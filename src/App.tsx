@@ -43,6 +43,15 @@ interface Store {
   password?: string;
 }
 
+interface RatingData {
+  id: string;
+  storeId: string;
+  storeName: string;
+  ratingValue: number;
+  ratingText: string;
+  timestamp: any;
+}
+
 const MOODS: Record<RatingLevel, MoodConfig> = {
   1: { value: 1, text: "感覺極差 (Terrible)", color: "#8C84E9" },
   2: { value: 2, text: "感覺不好 (Bad)", color: "#EF8761" },
@@ -157,6 +166,12 @@ function RatingApp() {
   const [isAddingStore, setIsAddingStore] = useState(false);
   const [addStoreError, setAddStoreError] = useState('');
 
+  // --- 數據分析儀表板狀態 ---
+  const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+  const [dashboardTab, setDashboardTab] = useState<'trend' | 'compare'>('trend');
+  const [allRatings, setAllRatings] = useState<RatingData[]>([]);
+  const [dashSelectedStoreId, setDashSelectedStoreId] = useState<string>('all');
+
   const [user, setUser] = useState<any>(null);
   
   const gaugeRef = useRef<SVGSVGElement>(null);
@@ -173,6 +188,7 @@ function RatingApp() {
   const serverTimestampRef = useRef<any>(null);
   const deleteDocRef = useRef<any>(null);
   const docRef = useRef<any>(null);
+  const onSnapshotRef = useRef<any>(null);
 
   useEffect(() => {
     // 確保 TailwindCSS 樣式正確載入
@@ -183,12 +199,10 @@ function RatingApp() {
       document.head.appendChild(script);
     }
 
-    // 啟動時先給予測試資料，避免畫面空白等待
     setStores([
       { id: 'store-1', name: '載入中...', password: '123' },
     ]);
 
-    // 在背景安全地載入 Firebase
     const initFirebase = async () => {
       try {
         // @ts-ignore
@@ -203,6 +217,7 @@ function RatingApp() {
         serverTimestampRef.current = serverTimestamp;
         deleteDocRef.current = deleteDoc;
         docRef.current = doc;
+        onSnapshotRef.current = onSnapshot;
 
         const firebaseConfig = {
           apiKey: "AIzaSyAT3wmU155GpYkZHdYRSIML9-VpBHTBDAY",
@@ -248,11 +263,9 @@ function RatingApp() {
     initFirebase();
   }, []);
 
-  // 【修復重點】：當商店列表變動時，確保選擇的 ID 確實存在於列表中
   useEffect(() => {
     if (stores.length > 0) {
       const isValidStore = stores.some(s => s.id === selectedStoreId);
-      // 如果目前選擇的 ID 空的，或是根本不在真實的清單中（例如被覆蓋掉），就強制切換到第一個真實分店
       if (!selectedStoreId || !isValidStore) {
         setSelectedStoreId(stores[0].id);
       }
@@ -274,6 +287,37 @@ function RatingApp() {
       }, 150);
     }
   }, [rating, isLoggedIn]);
+
+  // 監聽並抓取數據分析所需的所有評分
+  useEffect(() => {
+    if (!isDashboardOpen) return;
+
+    if (!dbRef.current || !collectionRef.current || !onSnapshotRef.current) {
+      // 如果沒有資料庫，提供一些測試用假數據來預覽後台
+      setAllRatings([
+        { id: '1', storeId: 'store-1', storeName: '台北信義店 (測試)', ratingValue: 5, ratingText: '非常滿意', timestamp: { seconds: Date.now() / 1000 } },
+        { id: '2', storeId: 'store-1', storeName: '台北信義店 (測試)', ratingValue: 4, ratingText: '感覺不錯', timestamp: { seconds: Date.now() / 1000 - 86400 * 2 } },
+        { id: '3', storeId: 'store-2', storeName: '台中勤美店 (測試)', ratingValue: 3, ratingText: '感覺普通', timestamp: { seconds: Date.now() / 1000 - 86400 * 10 } },
+      ]);
+      return;
+    }
+
+    const appIdStr = 'customer-rating-app';
+    // 為了能抓到所有評分，將路徑從 user 私有池改到 public 池統一管理
+    const allRatingsRef = collectionRef.current(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'ratings');
+    
+    const unsubscribe = onSnapshotRef.current(allRatingsRef, (snapshot: any) => {
+      const fetched: RatingData[] = [];
+      snapshot.forEach((doc: any) => {
+        fetched.push({ id: doc.id, ...doc.data() } as RatingData);
+      });
+      setAllRatings(fetched);
+    }, (err: any) => {
+      console.error("Fetch all ratings error:", err);
+    });
+
+    return () => unsubscribe();
+  }, [isDashboardOpen]);
 
   // --- 互動邏輯 ---
   const getAngleFromEvent = (e: React.PointerEvent | PointerEvent) => {
@@ -343,7 +387,6 @@ function RatingApp() {
   // --- 操作處理 ---
   const handleLogin = () => {
     const store = stores.find(s => s.id === selectedStoreId);
-    // 【修復重點】：加入 .trim() 避免不小心輸入空白鍵導致比對失敗
     if (store && store.password?.trim() === loginPassword.trim()) {
       setCurrentStore(store);
       setIsLoggedIn(true);
@@ -378,7 +421,7 @@ function RatingApp() {
       const appIdStr = 'customer-rating-app';
       const storesRef = collectionRef.current(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'stores');
       await addDocRef.current(storesRef, {
-        name: newStoreName.trim(), // 防呆：存入時也去除頭尾空白
+        name: newStoreName.trim(), 
         password: newStorePassword.trim()
       });
       setNewStoreName('');
@@ -421,7 +464,8 @@ function RatingApp() {
 
     try {
       const appIdStr = 'customer-rating-app';
-      const ratingsRef = collectionRef.current(dbRef.current, 'artifacts', appIdStr, 'users', user.uid, 'ratings');
+      // 【修改重點】：統一將所有評分存到 public pool 中，以便後台圖表能抓取全部數據
+      const ratingsRef = collectionRef.current(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'ratings');
       await addDocRef.current(ratingsRef, {
         storeId: currentStore?.id,
         storeName: currentStore?.name, 
@@ -439,6 +483,34 @@ function RatingApp() {
     }
   };
 
+  // --- 數據分析計算輔助函數 ---
+  const getPeriodStats = (ratings: RatingData[]) => {
+    const now = new Date();
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    const weekStart = new Date(todayStart - now.getDay() * 86400000).getTime();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
+    const quarterStart = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1).getTime();
+    const yearStart = new Date(now.getFullYear(), 0, 1).getTime();
+
+    const getAvg = (list: RatingData[]) => list.length ? (list.reduce((a,b)=>a+b.ratingValue,0)/list.length).toFixed(1) : '-';
+
+    const parseTime = (ts: any) => ts ? (ts.toMillis ? ts.toMillis() : (ts.seconds ? ts.seconds * 1000 : Date.now())) : Date.now();
+
+    const daily = ratings.filter(r => parseTime(r.timestamp) >= todayStart);
+    const weekly = ratings.filter(r => parseTime(r.timestamp) >= weekStart);
+    const monthly = ratings.filter(r => parseTime(r.timestamp) >= monthStart);
+    const quarterly = ratings.filter(r => parseTime(r.timestamp) >= quarterStart);
+    const yearly = ratings.filter(r => parseTime(r.timestamp) >= yearStart);
+
+    return [
+      { label: '本日', avg: getAvg(daily), count: daily.length },
+      { label: '本週', avg: getAvg(weekly), count: weekly.length },
+      { label: '本月', avg: getAvg(monthly), count: monthly.length },
+      { label: '本季', avg: getAvg(quarterly), count: quarterly.length },
+      { label: '本年', avg: getAvg(yearly), count: yearly.length },
+    ];
+  };
+
   return (
     <div 
       className={`min-h-screen bg-[#F8F8F8] flex items-center justify-center p-8 selection:bg-orange-200 overflow-hidden ${fontFamily}`}
@@ -453,6 +525,16 @@ function RatingApp() {
         style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
       >
         <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
+      </button>
+
+      {/* 浮動數據分析按鈕 (在齒輪下方) */}
+      <button 
+        onClick={() => setIsDashboardOpen(true)}
+        className="fixed right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-[#7DA164] hover:text-[#5d7c49] hover:shadow-lg transition-all z-40 border border-gray-100"
+        title="數據分析報表"
+        style={{ position: 'fixed', top: '5.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
+      >
+        <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
       </button>
 
       {/* 後台管理彈跳視窗 (Modal) */}
@@ -594,6 +676,116 @@ function RatingApp() {
         </div>
       )}
 
+      {/* 數據分析報表彈跳視窗 (Dashboard Modal) */}
+      {isDashboardOpen && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
+          <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]" style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '1.5rem', width: '100%', maxWidth: '42rem' }}>
+            
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+              <h2 className="text-2xl font-extrabold text-[#3E3124] flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#7DA164" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
+                評分數據分析
+              </h2>
+              <button onClick={() => setIsDashboardOpen(false)} style={{ border: 'none', background: 'transparent', cursor: 'pointer', color: '#9CA3AF' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line></svg>
+              </button>
+            </div>
+
+            {/* 頁籤切換 */}
+            <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1.5rem', backgroundColor: '#F3F4F6', padding: '0.375rem', borderRadius: '0.75rem' }}>
+              <button 
+                onClick={() => setDashboardTab('trend')}
+                style={{ flex: 1, padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 'bold', fontSize: '0.875rem', border: 'none', cursor: 'pointer', backgroundColor: dashboardTab === 'trend' ? 'white' : 'transparent', color: dashboardTab === 'trend' ? '#3E3124' : '#6B7280', boxShadow: dashboardTab === 'trend' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+              >
+                各分店趨勢
+              </button>
+              <button 
+                onClick={() => setDashboardTab('compare')}
+                style={{ flex: 1, padding: '0.5rem', borderRadius: '0.5rem', fontWeight: 'bold', fontSize: '0.875rem', border: 'none', cursor: 'pointer', backgroundColor: dashboardTab === 'compare' ? 'white' : 'transparent', color: dashboardTab === 'compare' ? '#3E3124' : '#6B7280', boxShadow: dashboardTab === 'compare' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none' }}
+              >
+                門店比較
+              </button>
+            </div>
+
+            {/* 頁面 1: 各分店趨勢 */}
+            {dashboardTab === 'trend' && (
+              <div>
+                <div style={{ marginBottom: '1.5rem' }}>
+                  <label style={{ display: 'block', fontSize: '0.875rem', fontWeight: 'bold', color: '#4B5563', marginBottom: '0.5rem' }}>篩選分店</label>
+                  <select 
+                    value={dashSelectedStoreId}
+                    onChange={(e) => setDashSelectedStoreId(e.target.value)}
+                    style={{ width: '100%', backgroundColor: '#F9FAFB', border: '2px solid #E5E7EB', color: '#3E3124', fontSize: '1rem', borderRadius: '0.5rem', padding: '0.75rem' }}
+                  >
+                    <option value="all">所有分店總計</option>
+                    {stores.map(store => (
+                      <option key={store.id} value={store.id}>{store.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))', gap: '1rem' }}>
+                  {(() => {
+                    const filteredRatings = dashSelectedStoreId === 'all' 
+                      ? allRatings 
+                      : allRatings.filter(r => r.storeId === dashSelectedStoreId);
+                    const stats = getPeriodStats(filteredRatings);
+
+                    return stats.map((stat, idx) => (
+                      <div key={idx} style={{ backgroundColor: '#F8F8F8', border: '1px solid #E5E7EB', borderRadius: '1rem', padding: '1rem', textAlign: 'center' }}>
+                        <div style={{ fontSize: '0.875rem', color: '#6B7280', fontWeight: 'bold', marginBottom: '0.25rem' }}>{stat.label}平均</div>
+                        <div style={{ fontSize: '1.75rem', fontWeight: '900', color: stat.avg !== '-' ? '#7DA164' : '#D1D5DB' }}>
+                          {stat.avg} <span style={{ fontSize: '1rem' }}>★</span>
+                        </div>
+                        <div style={{ fontSize: '0.75rem', color: '#9CA3AF', marginTop: '0.25rem' }}>共 {stat.count} 筆</div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+
+            {/* 頁面 2: 門店比較 */}
+            {dashboardTab === 'compare' && (
+              <div>
+                <p style={{ fontSize: '0.875rem', color: '#6B7280', marginBottom: '1rem' }}>列出各分店的總體平均評分表現 (滿分 5.0)</p>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                  {(() => {
+                    // 分組計算
+                    const storeStats: Record<string, { name: string, sum: number, count: number }> = {};
+                    allRatings.forEach(r => {
+                      if (!storeStats[r.storeId]) storeStats[r.storeId] = { name: r.storeName || '未知分店', sum: 0, count: 0 };
+                      storeStats[r.storeId].sum += r.ratingValue;
+                      storeStats[r.storeId].count += 1;
+                    });
+
+                    const ranking = Object.values(storeStats)
+                      .map(s => ({ ...s, avg: s.sum / s.count }))
+                      .sort((a, b) => b.avg - a.avg);
+
+                    if (ranking.length === 0) return <div style={{ textAlign: 'center', padding: '2rem', color: '#9CA3AF' }}>目前尚無任何評分資料</div>;
+
+                    return ranking.map((store, idx) => (
+                      <div key={idx} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', backgroundColor: '#F9FAFB', padding: '1rem', borderRadius: '1rem', border: '1px solid #F3F4F6' }}>
+                        <div style={{ display: 'flex', flexDirection: 'column' }}>
+                          <span style={{ fontWeight: 'bold', color: '#3E3124' }}>{store.name}</span>
+                          <span style={{ fontSize: '0.75rem', color: '#6B7280' }}>累計 {store.count} 筆評價</span>
+                        </div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                          <div style={{ fontWeight: '900', fontSize: '1.5rem', color: '#EF8761' }}>{store.avg.toFixed(1)}</div>
+                          <span style={{ color: '#F3D060', fontSize: '1.25rem' }}>★</span>
+                        </div>
+                      </div>
+                    ));
+                  })()}
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
       {/* ========================================================= */}
       {/* 判斷：若未登入則顯示登入畫面，若已登入則顯示評分畫面 */}
       {/* ========================================================= */}
@@ -673,12 +865,6 @@ function RatingApp() {
           {/* 左側：問題與表情 */}
           <div className="flex-1 flex flex-col items-center justify-center w-full max-w-md" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', width: '100%', maxWidth: '28rem' }}>
             
-            {/* 顯示目前登入分店 */}
-            <div className="bg-white/80 px-4 py-1.5 rounded-full text-sm font-bold text-gray-500 mb-6 shadow-sm border border-gray-100 flex items-center gap-2" style={{ backgroundColor: 'rgba(255,255,255,0.8)', padding: '0.375rem 1rem', borderRadius: '9999px', fontSize: '0.875rem', fontWeight: 'bold', color: '#6B7280', marginBottom: '1.5rem', border: '1px solid #F3F4F6', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-              <span className="w-2 h-2 rounded-full bg-green-500 inline-block" style={{ width: '0.5rem', height: '0.5rem', borderRadius: '50%', backgroundColor: '#22C55E', display: 'inline-block' }}></span>
-              目前分店：{currentStore?.name}
-            </div>
-
             <h1 className="text-[36px] md:text-[44px] font-extrabold text-[#3E3124] text-center leading-tight mb-4 tracking-wide whitespace-pre-line" style={{ fontSize: '2.5rem', fontWeight: '900', textAlign: 'center', whiteSpace: 'pre-line', marginBottom: '1rem' }}>
               {mainQuestion}
             </h1>
@@ -689,8 +875,8 @@ function RatingApp() {
 
             <div 
               ref={faceContainerRef}
-              className="w-48 h-48 md:w-64 md:h-64 transition-transform duration-300 ease-in-out transform origin-center drop-shadow-2xl"
-              style={{ width: '12rem', height: '12rem', transition: 'transform 300ms' }}
+              className="w-48 h-48 md:w-64 md:h-64 transition-transform duration-300 ease-in-out transform origin-center rounded-full shadow-2xl"
+              style={{ width: '12rem', height: '12rem', transition: 'transform 300ms', borderRadius: '9999px', boxShadow: '0 25px 50px -12px rgba(0, 0, 0, 0.25)' }}
             >
               <DynamicFace rating={rating} />
             </div>
@@ -716,11 +902,34 @@ function RatingApp() {
                   className={isDragging ? "" : "transition-transform duration-500 ease-out"}
                   style={{ transition: isDragging ? 'none' : 'transform 500ms ease-out' }}
                 >
+                  {/* 色塊路徑 */}
                   <path d={describeArc(200, 200, 150, -180, -54)} fill="none" stroke={MOODS[1].color} strokeWidth="60" />
                   <path d={describeArc(200, 200, 150, -54, -18)} fill="none" stroke={MOODS[2].color} strokeWidth="60" />
                   <path d={describeArc(200, 200, 150, -18, 18)} fill="none" stroke={MOODS[3].color} strokeWidth="60" />
                   <path d={describeArc(200, 200, 150, 18, 54)} fill="none" stroke={MOODS[4].color} strokeWidth="60" />
                   <path d={describeArc(200, 200, 150, 54, 180)} fill="none" stroke={MOODS[5].color} strokeWidth="60" />
+                  
+                  {/* 【新增】：在色塊上方添加 1~5 的數字 */}
+                  {[1, 2, 3, 4, 5].map(val => {
+                    const angle = (val - 3) * 36; // 根據滑輪邏輯，1 是 -72度，5 是 72度
+                    const pos = polarToCartesian(200, 200, 150, angle);
+                    return (
+                      <text 
+                        key={val} 
+                        x={pos.x} 
+                        y={pos.y} 
+                        textAnchor="middle" 
+                        dominantBaseline="central" 
+                        fill="white" 
+                        fontSize="28" 
+                        fontWeight="bold" 
+                        opacity="0.8"
+                        style={{ userSelect: 'none' }}
+                      >
+                        {val}
+                      </text>
+                    );
+                  })}
                 </g>
 
                 <g transform="translate(200, 200) scale(1.1)">
