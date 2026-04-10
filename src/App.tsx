@@ -362,7 +362,15 @@ function RatingApp() {
       newRot = clamp(newRot, -72, 72);
       
       setGaugeRotation(newRot);
-      setRating(clamp(3 - Math.round(newRot / 36), 1, 5) as RatingLevel);
+      
+      // 計算新的分數，若有切換則觸發微震動 (15 毫秒)
+      const newRating = clamp(3 - Math.round(newRot / 36), 1, 5) as RatingLevel;
+      setRating(prev => {
+        if (prev !== newRating && navigator.vibrate) {
+          navigator.vibrate(15); 
+        }
+        return newRating;
+      });
     };
 
     const handlePointerUp = (e: PointerEvent) => {
@@ -381,7 +389,15 @@ function RatingApp() {
       targetRot = clamp(targetRot, -72, 72);
       
       setGaugeRotation(targetRot);
-      setRating(clamp(3 - Math.round(targetRot / 36), 1, 5) as RatingLevel);
+
+      // 點擊直接跳轉分數時，也觸發微震動
+      const newRating = clamp(3 - Math.round(targetRot / 36), 1, 5) as RatingLevel;
+      setRating(prev => {
+        if (prev !== newRating && navigator.vibrate) {
+          navigator.vibrate(15);
+        }
+        return newRating;
+      });
     };
 
     if (isDragging) {
@@ -553,20 +569,22 @@ function RatingApp() {
       {/* ========================================================= */}
       {(isLoggedIn || stores.length === 0) && (
         <>
-          {/* 浮動齒輪按鈕 (後台設定) - 隱形秘密按鈕 */}
+          {/* 浮動齒輪按鈕 (後台設定) - 恢復為正常顯示 */}
           <button 
             onClick={() => setAuthPromptContext('admin')}
-            title="後台設定(隱藏)"
-            style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', width: '3.5rem', height: '3.5rem', opacity: 0, zIndex: 40, cursor: 'pointer', border: 'none', background: 'transparent' }}
+            className="fixed top-6 right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-gray-400 hover:text-gray-800 hover:shadow-lg transition-all z-40 border border-gray-100"
+            title="後台設定"
+            style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
 
-          {/* 浮動數據分析按鈕 (在齒輪下方) - 隱形秘密按鈕 */}
+          {/* 浮動數據分析按鈕 (在齒輪下方) - 恢復為正常顯示 */}
           <button 
             onClick={() => setAuthPromptContext('dashboard')}
-            title="數據分析報表(隱藏)"
-            style={{ position: 'fixed', top: '5.5rem', right: '1.5rem', width: '3.5rem', height: '3.5rem', opacity: 0, zIndex: 40, cursor: 'pointer', border: 'none', background: 'transparent' }}
+            className="fixed right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-[#7DA164] hover:text-[#5d7c49] hover:shadow-lg transition-all z-40 border border-gray-100"
+            title="數據分析報表"
+            style={{ position: 'fixed', top: '5.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
           </button>
