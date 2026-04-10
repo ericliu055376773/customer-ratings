@@ -172,6 +172,11 @@ function RatingApp() {
   const [allRatings, setAllRatings] = useState<RatingData[]>([]);
   const [dashSelectedStoreId, setDashSelectedStoreId] = useState<string>('all');
 
+  // --- 獨立管理員密碼驗證狀態 (0204) ---
+  const [authPromptContext, setAuthPromptContext] = useState<'admin' | 'dashboard' | null>(null);
+  const [adminPwd, setAdminPwd] = useState('');
+  const [adminPwdError, setAdminPwdError] = useState('');
+
   const [user, setUser] = useState<any>(null);
   
   const gaugeRef = useRef<SVGSVGElement>(null);
@@ -384,6 +389,28 @@ function RatingApp() {
     };
   }, [isDragging, gaugeRotation, isLoggedIn]);
 
+  // --- 管理員密碼驗證處理 (0204) ---
+  const handleAdminAuth = () => {
+    if (adminPwd === '0204') {
+      // 密碼正確，開啟對應的彈跳視窗
+      if (authPromptContext === 'admin') setIsAdminOpen(true);
+      else if (authPromptContext === 'dashboard') setIsDashboardOpen(true);
+      
+      // 清空狀態
+      setAuthPromptContext(null);
+      setAdminPwd('');
+      setAdminPwdError('');
+    } else {
+      setAdminPwdError('密碼錯誤');
+    }
+  };
+
+  const cancelAdminAuth = () => {
+    setAuthPromptContext(null);
+    setAdminPwd('');
+    setAdminPwdError('');
+  };
+
   // --- 操作處理 ---
   const handleLogin = () => {
     const store = stores.find(s => s.id === selectedStoreId);
@@ -464,7 +491,6 @@ function RatingApp() {
 
     try {
       const appIdStr = 'customer-rating-app';
-      // 【修改重點】：統一將所有評分存到 public pool 中，以便後台圖表能抓取全部數據
       const ratingsRef = collectionRef.current(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'ratings');
       await addDocRef.current(ratingsRef, {
         storeId: currentStore?.id,
@@ -517,9 +543,13 @@ function RatingApp() {
       style={{ minHeight: '100vh', backgroundColor: '#F8F8F8', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3E3124' }}
     >
       
+      {/* ========================================================= */}
+      {/* 浮動功能按鈕區 */}
+      {/* ========================================================= */}
+
       {/* 浮動齒輪按鈕 (後台設定) */}
       <button 
-        onClick={() => setIsAdminOpen(true)}
+        onClick={() => setAuthPromptContext('admin')}
         className="fixed top-6 right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-gray-400 hover:text-gray-800 hover:shadow-lg transition-all z-40 border border-gray-100"
         title="後台設定"
         style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
@@ -529,7 +559,7 @@ function RatingApp() {
 
       {/* 浮動數據分析按鈕 (在齒輪下方) */}
       <button 
-        onClick={() => setIsDashboardOpen(true)}
+        onClick={() => setAuthPromptContext('dashboard')}
         className="fixed right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-[#7DA164] hover:text-[#5d7c49] hover:shadow-lg transition-all z-40 border border-gray-100"
         title="數據分析報表"
         style={{ position: 'fixed', top: '5.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
@@ -537,7 +567,64 @@ function RatingApp() {
         <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
       </button>
 
+      {/* ========================================================= */}
+      {/* 統一管理員密碼輸入視窗 (0204) */}
+      {/* ========================================================= */}
+      {authPromptContext && (
+        <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-[60] p-4" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 60 }}>
+          <div className="bg-white rounded-3xl p-8 max-w-sm w-full shadow-2xl animate-in fade-in zoom-in duration-200" style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '1.5rem', width: '100%', maxWidth: '22rem' }}>
+            <div style={{ display: 'flex', justifyContent: 'center', marginBottom: '1rem' }}>
+              <div style={{ width: '4rem', height: '4rem', backgroundColor: '#F3F4F6', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4B5563' }}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect><path d="M7 11V7a5 5 0 0 1 10 0v4"></path></svg>
+              </div>
+            </div>
+            <h2 className="text-xl font-extrabold text-[#3E3124] mb-2 text-center" style={{ fontSize: '1.25rem', fontWeight: '900', color: '#3E3124', marginBottom: '0.5rem', textAlign: 'center' }}>
+              系統安全驗證
+            </h2>
+            <p className="text-center text-gray-500 mb-6 text-sm" style={{ textAlign: 'center', color: '#6B7280', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
+              請輸入管理員密碼以進入{authPromptContext === 'admin' ? '後台設定' : '數據分析'}。
+            </p>
+            
+            <input
+              type="password"
+              value={adminPwd}
+              onChange={(e) => setAdminPwd(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleAdminAuth()}
+              placeholder="請輸入密碼"
+              className="w-full bg-gray-50 border-2 border-gray-200 text-[#3E3124] text-lg rounded-xl focus:ring-[#7DA164] focus:border-[#7DA164] block p-3 outline-none transition-colors mb-2 text-center tracking-widest"
+              style={{ width: '100%', backgroundColor: '#F9FAFB', border: '2px solid #E5E7EB', color: '#3E3124', fontSize: '1.125rem', borderRadius: '0.75rem', padding: '0.75rem', textAlign: 'center', letterSpacing: '0.2em' }}
+              autoFocus
+            />
+            
+            {adminPwdError && (
+              <p className="text-red-500 text-sm font-bold text-center mb-4" style={{ color: '#EF4444', fontSize: '0.875rem', fontWeight: 'bold', textAlign: 'center', marginTop: '0.5rem' }}>
+                {adminPwdError}
+              </p>
+            )}
+            
+            <div className="flex gap-3 mt-6" style={{ display: 'flex', gap: '0.75rem', marginTop: '1.5rem' }}>
+              <button
+                onClick={cancelAdminAuth}
+                className="flex-1 bg-gray-200 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-300 transition-colors"
+                style={{ flex: 1, padding: '0.75rem', backgroundColor: '#E5E7EB', color: '#374151', borderRadius: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+              >
+                取消
+              </button>
+              <button
+                onClick={handleAdminAuth}
+                className="flex-1 bg-[#3E3124] text-white py-3 rounded-xl font-bold hover:bg-black transition-colors"
+                style={{ flex: 1, padding: '0.75rem', backgroundColor: '#3E3124', color: 'white', borderRadius: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+              >
+                確認
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
       {/* 後台管理彈跳視窗 (Modal) */}
+      {/* ========================================================= */}
       {isAdminOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
           <div className="bg-white rounded-3xl p-8 max-w-lg w-full shadow-2xl animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]" style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '1.5rem', width: '100%', maxWidth: '32rem' }}>
@@ -676,7 +763,9 @@ function RatingApp() {
         </div>
       )}
 
+      {/* ========================================================= */}
       {/* 數據分析報表彈跳視窗 (Dashboard Modal) */}
+      {/* ========================================================= */}
       {isDashboardOpen && (
         <div className="fixed inset-0 bg-black/40 backdrop-blur-sm flex items-center justify-center z-50 p-4" style={{ position: 'fixed', inset: 0, backgroundColor: 'rgba(0,0,0,0.4)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 50 }}>
           <div className="bg-white rounded-3xl p-8 max-w-2xl w-full shadow-2xl animate-in fade-in zoom-in duration-200 overflow-y-auto max-h-[90vh]" style={{ backgroundColor: 'white', padding: '2rem', borderRadius: '1.5rem', width: '100%', maxWidth: '42rem' }}>
