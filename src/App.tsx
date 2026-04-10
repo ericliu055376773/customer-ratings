@@ -31,12 +31,6 @@ class ErrorBoundary extends React.Component<{children: React.ReactNode}, {hasErr
 // ==========================================
 type RatingLevel = 1 | 2 | 3 | 4 | 5;
 
-interface MoodConfig {
-  value: RatingLevel;
-  text: string;
-  color: string;
-}
-
 interface Store {
   id: string;
   name: string;
@@ -52,12 +46,13 @@ interface RatingData {
   timestamp: any;
 }
 
-const MOODS: Record<RatingLevel, MoodConfig> = {
-  1: { value: 1, text: "感覺極差 (Terrible)", color: "#8C84E9" },
-  2: { value: 2, text: "感覺不好 (Bad)", color: "#EF8761" },
-  3: { value: 3, text: "感覺普通 (Neutral)", color: "#7DA164" }, 
-  4: { value: 4, text: "感覺不錯 (Good)", color: "#A8C686" },
-  5: { value: 5, text: "非常滿意 (Excellent)", color: "#F3D060" } 
+// 僅保留顏色設定，文字改為可變動的 State
+const MOOD_COLORS: Record<RatingLevel, string> = {
+  1: "#8C84E9",
+  2: "#EF8761",
+  3: "#7DA164", 
+  4: "#A8C686",
+  5: "#F3D060" 
 };
 
 const clamp = (val: number, min: number, max: number) => Math.max(min, Math.min(max, val));
@@ -84,11 +79,11 @@ function describeArc(x: number, y: number, radius: number, startAngle: number, e
 // Components
 // ==========================================
 const DynamicFace = ({ rating, className = "", style }: { rating: RatingLevel; className?: string; style?: React.CSSProperties }) => {
-  const config = MOODS[rating];
+  const color = MOOD_COLORS[rating];
 
   return (
     <svg viewBox="0 0 100 100" className={`transition-all duration-500 ease-out ${className}`} style={{ width: '100%', height: '100%', ...style }}>
-      <circle cx="50" cy="50" r="50" fill={config.color} className="transition-colors duration-500" />
+      <circle cx="50" cy="50" r="50" fill={color} className="transition-colors duration-500" />
       <g stroke="#3E3124" strokeWidth="6" strokeLinecap="round" strokeLinejoin="round" fill="none" className="transition-all duration-300">
         {rating === 1 && (
           <>
@@ -149,6 +144,16 @@ function RatingApp() {
   const [customTextAlign, setCustomTextAlign] = useState<'left' | 'center' | 'right'>('center');
   const [fontFamily, setFontFamily] = useState<string>('font-sans'); 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+
+  // 【新增】：後台自訂表情文字與按鈕文字狀態
+  const [buttonText, setButtonText] = useState("繼續 (Continue)");
+  const [moodTexts, setMoodTexts] = useState<Record<RatingLevel, string>>({
+    1: "感覺極差 (Terrible)",
+    2: "感覺不好 (Bad)",
+    3: "感覺普通 (Neutral)",
+    4: "感覺不錯 (Good)",
+    5: "非常滿意 (Excellent)"
+  });
 
   // --- 帳號登入與管理系統狀態 ---
   const [stores, setStores] = useState<Store[]>([]);
@@ -496,7 +501,7 @@ function RatingApp() {
         storeId: currentStore?.id,
         storeName: currentStore?.name, 
         ratingValue: rating,
-        ratingText: MOODS[rating].text,
+        ratingText: moodTexts[rating],
         timestamp: serverTimestampRef.current()
       });
       setSaveStatus('評分已成功送出！');
@@ -548,22 +553,20 @@ function RatingApp() {
       {/* ========================================================= */}
       {(isLoggedIn || stores.length === 0) && (
         <>
-          {/* 浮動齒輪按鈕 (後台設定) */}
+          {/* 浮動齒輪按鈕 (後台設定) - 隱形秘密按鈕 */}
           <button 
             onClick={() => setAuthPromptContext('admin')}
-            className="fixed top-6 right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-gray-400 hover:text-gray-800 hover:shadow-lg transition-all z-40 border border-gray-100"
-            title="後台設定"
-            style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
+            title="後台設定(隱藏)"
+            style={{ position: 'fixed', top: '1.5rem', right: '1.5rem', width: '3.5rem', height: '3.5rem', opacity: 0, zIndex: 40, cursor: 'pointer', border: 'none', background: 'transparent' }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z"/><circle cx="12" cy="12" r="3"/></svg>
           </button>
 
-          {/* 浮動數據分析按鈕 (在齒輪下方) */}
+          {/* 浮動數據分析按鈕 (在齒輪下方) - 隱形秘密按鈕 */}
           <button 
             onClick={() => setAuthPromptContext('dashboard')}
-            className="fixed right-6 w-12 h-12 bg-white rounded-full shadow-md flex items-center justify-center text-[#7DA164] hover:text-[#5d7c49] hover:shadow-lg transition-all z-40 border border-gray-100"
-            title="數據分析報表"
-            style={{ position: 'fixed', top: '5.5rem', right: '1.5rem', width: '3rem', height: '3rem', backgroundColor: 'white', borderRadius: '50%', display: 'flex', alignItems: 'center', justifyContent: 'center', boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.1)', zIndex: 40, cursor: 'pointer', border: 'none' }}
+            title="數據分析報表(隱藏)"
+            style={{ position: 'fixed', top: '5.5rem', right: '1.5rem', width: '3.5rem', height: '3.5rem', opacity: 0, zIndex: 40, cursor: 'pointer', border: 'none', background: 'transparent' }}
           >
             <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><line x1="18" y1="20" x2="18" y2="10"></line><line x1="12" y1="20" x2="12" y2="4"></line><line x1="6" y1="20" x2="6" y2="14"></line></svg>
           </button>
@@ -725,7 +728,7 @@ function RatingApp() {
                 />
               </div>
 
-              <div className="flex gap-3" style={{ display: 'flex', gap: '0.75rem' }}>
+              <div className="flex gap-3 mb-4" style={{ display: 'flex', gap: '0.75rem', marginBottom: '1rem' }}>
                 <div className="flex-1">
                   <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">文字對齊</label>
                   <select 
@@ -751,6 +754,36 @@ function RatingApp() {
                     <option value="font-serif">襯線體</option>
                     <option value="font-mono">等寬體</option>
                   </select>
+                </div>
+              </div>
+
+              {/* 【新增】：提交按鈕與表情文字設定 */}
+              <div className="mb-4 pt-4 border-t border-gray-200" style={{ paddingTop: '1rem', borderTop: '1px solid #E5E7EB' }}>
+                <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">提交按鈕文字</label>
+                <input 
+                  type="text"
+                  value={buttonText}
+                  onChange={(e) => setButtonText(e.target.value)}
+                  className="w-full bg-white border border-gray-200 text-[#3E3124] text-sm rounded-lg p-2 outline-none"
+                  style={{ width: '100%', padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #E5E7EB' }}
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-gray-500 mb-2 uppercase">表情評分文字 (1~5分)</label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                  {([1, 2, 3, 4, 5] as RatingLevel[]).map((level) => (
+                    <div key={level} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                      <span style={{ width: '1.5rem', height: '1.5rem', borderRadius: '50%', backgroundColor: MOOD_COLORS[level], color: 'white', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '0.75rem', fontWeight: 'bold' }}>{level}</span>
+                      <input
+                        type="text"
+                        value={moodTexts[level]}
+                        onChange={(e) => setMoodTexts(prev => ({ ...prev, [level]: e.target.value }))}
+                        className="flex-1 bg-white border border-gray-200 text-[#3E3124] text-sm rounded-lg p-2 outline-none"
+                        style={{ flex: 1, padding: '0.5rem', borderRadius: '0.5rem', border: '1px solid #E5E7EB' }}
+                      />
+                    </div>
+                  ))}
                 </div>
               </div>
             </div>
@@ -962,7 +995,7 @@ function RatingApp() {
             </h1>
 
             <div className="text-gray-500 font-medium text-xl md:text-2xl mb-10 transition-all duration-300" style={{ color: '#6B7280', fontSize: '1.25rem', marginBottom: '2.5rem' }}>
-              {MOODS[rating].text}
+              {moodTexts[rating]}
             </div>
 
             <div 
@@ -995,14 +1028,14 @@ function RatingApp() {
                   style={{ transition: isDragging ? 'none' : 'transform 500ms ease-out' }}
                 >
                   {/* 色塊路徑 */}
-                  <path d={describeArc(200, 200, 150, -180, -54)} fill="none" stroke={MOODS[1].color} strokeWidth="60" />
-                  <path d={describeArc(200, 200, 150, -54, -18)} fill="none" stroke={MOODS[2].color} strokeWidth="60" />
-                  <path d={describeArc(200, 200, 150, -18, 18)} fill="none" stroke={MOODS[3].color} strokeWidth="60" />
-                  <path d={describeArc(200, 200, 150, 18, 54)} fill="none" stroke={MOODS[4].color} strokeWidth="60" />
-                  <path d={describeArc(200, 200, 150, 54, 180)} fill="none" stroke={MOODS[5].color} strokeWidth="60" />
+                  <path d={describeArc(200, 200, 150, -180, -54)} fill="none" stroke={MOOD_COLORS[1]} strokeWidth="60" />
+                  <path d={describeArc(200, 200, 150, -54, -18)} fill="none" stroke={MOOD_COLORS[2]} strokeWidth="60" />
+                  <path d={describeArc(200, 200, 150, -18, 18)} fill="none" stroke={MOOD_COLORS[3]} strokeWidth="60" />
+                  <path d={describeArc(200, 200, 150, 18, 54)} fill="none" stroke={MOOD_COLORS[4]} strokeWidth="60" />
+                  <path d={describeArc(200, 200, 150, 54, 180)} fill="none" stroke={MOOD_COLORS[5]} strokeWidth="60" />
                   
-                  {/* 【新增】：在色塊上方添加 1~5 的數字 */}
-                  {[1, 2, 3, 4, 5].map(val => {
+                  {/* 在色塊上方添加 1~5 的數字 */}
+                  {([1, 2, 3, 4, 5] as RatingLevel[]).map(val => {
                     const angle = (val - 3) * 36; // 根據滑輪邏輯，1 是 -72度，5 是 72度
                     const pos = polarToCartesian(200, 200, 150, angle);
                     return (
@@ -1055,7 +1088,7 @@ function RatingApp() {
               className={`w-full max-w-[400px] bg-[#3E3124] text-white py-5 rounded-2xl font-bold text-xl flex items-center justify-center gap-3 transition-all active:scale-95 shadow-lg ${isSaving ? 'opacity-70 cursor-not-allowed' : 'hover:bg-black hover:shadow-xl'}`}
               style={{ width: '100%', maxWidth: '25rem', backgroundColor: '#3E3124', color: 'white', padding: '1.25rem', borderRadius: '1rem', fontSize: '1.25rem', fontWeight: 'bold', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '0.75rem', border: 'none', cursor: isSaving ? 'not-allowed' : 'pointer' }}
             >
-              {isSaving ? '處理中...' : '繼續 (Continue)'}
+              {isSaving ? '處理中...' : buttonText}
               {!isSaving && <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>}
             </button>
           </div>
