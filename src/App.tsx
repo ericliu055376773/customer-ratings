@@ -144,6 +144,7 @@ function RatingApp() {
   const [customTextAlign, setCustomTextAlign] = useState<'left' | 'center' | 'right'>('center');
   const [fontFamily, setFontFamily] = useState<string>('font-sans'); 
   const [isAdminOpen, setIsAdminOpen] = useState(false);
+  const [isSavingSettings, setIsSavingSettings] = useState(false); // 設定儲存狀態
 
   // 【新增】：後台自訂表情文字與按鈕文字狀態
   const [buttonText, setButtonText] = useState("繼續 (Continue)");
@@ -199,6 +200,7 @@ function RatingApp() {
   const deleteDocRef = useRef<any>(null);
   const docRef = useRef<any>(null);
   const onSnapshotRef = useRef<any>(null);
+  const setDocRef = useRef<any>(null); // 【新增】: 用來寫入設定文件
 
   useEffect(() => {
     // 確保 TailwindCSS 樣式正確載入
@@ -220,7 +222,7 @@ function RatingApp() {
         // @ts-ignore
         const { getAuth, signInAnonymously, onAuthStateChanged } = await import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js');
         // @ts-ignore
-        const { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, deleteDoc, doc } = await import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
+        const { getFirestore, collection, addDoc, serverTimestamp, onSnapshot, deleteDoc, doc, setDoc } = await import(/* @vite-ignore */ 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js');
 
         addDocRef.current = addDoc;
         collectionRef.current = collection;
@@ -228,6 +230,7 @@ function RatingApp() {
         deleteDocRef.current = deleteDoc;
         docRef.current = doc;
         onSnapshotRef.current = onSnapshot;
+        setDocRef.current = setDoc; // 綁定 setDoc
 
         const firebaseConfig = {
           apiKey: "AIzaSyAT3wmU155GpYkZHdYRSIML9-VpBHTBDAY",
@@ -248,8 +251,9 @@ function RatingApp() {
           setUser(currentUser);
           if (currentUser) {
             const appIdStr = 'customer-rating-app';
+            
+            // 1. 監聽分店清單
             const storesRef = collection(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'stores');
-
             onSnapshot(storesRef, (snapshot: any) => {
               const loadedStores: Store[] = [];
               snapshot.forEach((docSnap: any) => {
@@ -258,6 +262,22 @@ function RatingApp() {
               setStores(loadedStores);
             }, (err: any) => {
               console.error("Fetch stores error:", err);
+            });
+
+            // 2. 監聽全域自訂設定 (同步文字)
+            const settingsDocRef = doc(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'settings', 'general');
+            onSnapshot(settingsDocRef, (docSnap: any) => {
+              if (docSnap.exists()) {
+                const data = docSnap.data();
+                if (data.mainQuestion !== undefined) setMainQuestion(data.mainQuestion);
+                if (data.customMessage !== undefined) setCustomMessage(data.customMessage);
+                if (data.customTextAlign !== undefined) setCustomTextAlign(data.customTextAlign);
+                if (data.fontFamily !== undefined) setFontFamily(data.fontFamily);
+                if (data.buttonText !== undefined) setButtonText(data.buttonText);
+                if (data.moodTexts !== undefined) setMoodTexts(data.moodTexts);
+              }
+            }, (err: any) => {
+              console.error("Fetch settings error:", err);
             });
           }
         });
@@ -494,6 +514,33 @@ function RatingApp() {
       if (currentStore?.id === id) handleLogout(); 
     } catch (error) {
       console.error("Error deleting store:", error);
+    }
+  };
+
+  // 【新增】：將介面設定儲存到 Firebase 供所有裝置同步
+  const handleSaveSettings = async () => {
+    setIsSavingSettings(true);
+    try {
+      if (dbRef.current && setDocRef.current && docRef.current) {
+        const appIdStr = 'customer-rating-app';
+        const settingsDoc = docRef.current(dbRef.current, 'artifacts', appIdStr, 'public', 'data', 'settings', 'general');
+        
+        // 寫入(覆蓋並合併)設定至資料庫
+        await setDocRef.current(settingsDoc, {
+          mainQuestion,
+          customMessage,
+          customTextAlign,
+          fontFamily,
+          buttonText,
+          moodTexts
+        }, { merge: true });
+      }
+    } catch (error) {
+      console.error("Error saving settings:", error);
+      alert("設定儲存失敗，請檢查網路連線與資料庫權限");
+    } finally {
+      setIsSavingSettings(false);
+      setIsAdminOpen(false); // 儲存完畢後關閉視窗
     }
   };
 
@@ -775,7 +822,7 @@ function RatingApp() {
                 </div>
               </div>
 
-              {/* 【新增】：提交按鈕與表情文字設定 */}
+              {/* 提交按鈕與表情文字設定 */}
               <div className="mb-4 pt-4 border-t border-gray-200" style={{ paddingTop: '1rem', borderTop: '1px solid #E5E7EB' }}>
                 <label className="block text-xs font-bold text-gray-500 mb-1 uppercase">提交按鈕文字</label>
                 <input 
@@ -806,12 +853,14 @@ function RatingApp() {
               </div>
             </div>
 
+            {/* 【修改】：點擊完成並關閉時，將設定存回 Firebase */}
             <button 
-              onClick={() => setIsAdminOpen(false)}
-              className="w-full bg-[#3E3124] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-black transition-colors shadow-md"
-              style={{ width: '100%', padding: '0.875rem', backgroundColor: '#3E3124', color: 'white', borderRadius: '0.75rem', fontWeight: 'bold', border: 'none', cursor: 'pointer' }}
+              onClick={handleSaveSettings}
+              disabled={isSavingSettings}
+              className="w-full bg-[#3E3124] text-white py-3.5 rounded-xl font-bold text-lg hover:bg-black transition-colors shadow-md disabled:opacity-70"
+              style={{ width: '100%', padding: '0.875rem', backgroundColor: '#3E3124', color: 'white', borderRadius: '0.75rem', fontWeight: 'bold', border: 'none', cursor: isSavingSettings ? 'not-allowed' : 'pointer' }}
             >
-              完成並關閉
+              {isSavingSettings ? '儲存中...' : '完成並儲存設定'}
             </button>
           </div>
         </div>
